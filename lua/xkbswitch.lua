@@ -10,7 +10,7 @@ end
 
 local function get_current_layout()
     local cmd = string.format(
-        "hyprctl devices -j | jq -r '.keyboards[] | select(.name == \"%s\") .active_keymap'",
+        "hyprctl devices -j | jq -r '.keyboards[] | select(.main == true) .active_keymap'",
         M.hyprctl_active_keyboard_name
     )
     local result = exec(cmd)
@@ -61,7 +61,7 @@ function M.setup(opts)
   M.saved_layout = get_current_layout()
 
   local cmd = string.format(
-    "hyprctl devices -j | jq -r '.keyboards[] | select(.name == \"%s\") .layout'",
+    "hyprctl devices -j | jq -r '.keyboards[] | select(.main == true) .layout'",
     M.hyprctl_active_keyboard_name
   )
   local result = exec(cmd)
@@ -79,7 +79,7 @@ function M.setup(opts)
   
   if not M.en_layout_name then
     error(string.format(
-      "Error occurred: could not find the English layout. Check your layout list executing: hyprctl devices -j | jq -r '.keyboards[] | select(.name == \"%s\") .layout'",
+      "Error occurred: could not find the English layout. Check your layout list executing: hyprctl devices -j | jq -r '.keyboards[] | select(.main == true) .layout'",
       opts.hyprctl_active_keyboard_name
     ))
   end

@@ -11,165 +11,20 @@ Plugin saves your actual layout before switching to English. The next time you e
 **It also works with focus.** When Neovim loses focus plugin switches your layout to the last saved one. When Neovim gets focus plugin saves your layout, which you could've changed in another window and switches to English **only if** you need it. ([Logic](#about))\
 Now you need to switch your layout only when you need to type something in a different language! That's the way it always should have been.
 
-## macOS
-1. Install [input-source-switcher](https://github.com/vovkasm/input-source-switcher)
-```bash
-git clone https://github.com/vovkasm/input-source-switcher.git
-cd input-source-switcher
-mkdir build && cd build
-brew install cmake
-cmake ..
-make
-sudo make install
-```
-
-2. Install this plugin
-<table>
-<tr>
-  <th> Packer </th>
-  <th> Lazy (~/.config/nvim/lua/plugins/xkbswitch.lua) </th>
-  <th> Dein </th>
-</tr>
-<tr>
-<td>
+## Linux / Unix (Wayland and Hyprland)
+In most cases you do not need to install anything, just make sure you can run `hyprctl` and have `jq` installed.
+Then you need to detect your active keyboard running `hyprctl devices -j | jq -r '.keyboards[]'` and check which of them react to layout changing.
+Put its name in a settings. Mine is `keyd-virtual-keyboard` because I use `keyd` so using `lazy` I configure it this way:
 
 ```lua
-use 'ivanesmantovich/xkbswitch.nvim'
-```
-
-</td>
-<td>
-
-```lua
-return { 
-    {'ivanesmantovich/xkbswitch.nvim'} 
+return {
+  'andr-kuz/xkbswitch.nvim',
+  config = function()
+    require('xkbswitch').setup({
+      hyprctl_active_keyboard_name = 'keyd-virtual-keyboard'
+    })
+  end
 }
-```
-
-</td>
-<td>
-
-```lua
-call dein#add('ivanesmantovich/xkbswitch.nvim')
-```
-
-</td>
-</tr>
-</table>
-
-3. Add the setup line to your config
-```lua
-require('xkbswitch').setup()
-```
-
-## Linux / Unix (X.org / Wayland)
-1. Install package `libxkbfile-dev` (or `libxkbfile-devel` if you use Fedora)
-2. Install [xkb-switch](https://github.com/grwlf/xkb-switch)
-```bash
-git clone https://github.com/grwlf/xkb-switch.git
-cd xkb-switch
-mkdir build && cd build
-cmake ..
-make
-sudo make install
-sudo ldconfig
-```
-3. Install this plugin
-<table>
-<tr>
-  <th> Packer </th>
-  <th> Lazy (~/.config/nvim/lua/plugins/xkbswitch.lua) </th>
-  <th> Dein </th>
-</tr>
-<tr>
-<td>
-
-```lua
-use 'ivanesmantovich/xkbswitch.nvim'
-```
-
-</td>
-<td>
-
-```lua
-return { 
-    {'ivanesmantovich/xkbswitch.nvim'} 
-}
-```
-
-</td>
-<td>
-
-```lua
-call dein#add('ivanesmantovich/xkbswitch.nvim')
-```
-
-</td>
-</tr>
-</table>
-
-4. Add the setup line to your config
-```lua
-require('xkbswitch').setup()
-```
-
-## GNOME 3 or 4 (g3kb-switch)
-1. Install `libglib2.0-dev` package (or `glib2-devel` if you use Fedora)
-2. Install [g3kb-switch](https://github.com/lyokha/g3kb-switch) and the [extension](https://github.com/lyokha/g3kb-switch#gnome-41-and-newer).
-```bash
-git clone https://github.com/lyokha/g3kb-switch.git
-cd g3kb-switch
-mkdir build && cd build
-cmake ..
-make
-sudo make install
-
-cd ../extension
-make install  # no sudo required!
-```
-3. Install this plugin
-<table>
-<tr>
-  <th> Packer </th>
-  <th> Lazy (~/.config/nvim/lua/plugins/xkbswitch.lua) </th>
-  <th> Dein </th>
-</tr>
-<tr>
-<td>
-
-```lua
-use 'ivanesmantovich/xkbswitch.nvim'
-```
-
-</td>
-<td>
-
-```lua
-return { 
-    {'ivanesmantovich/xkbswitch.nvim'} 
-}
-```
-
-</td>
-<td>
-
-```lua
-call dein#add('ivanesmantovich/xkbswitch.nvim')
-```
-
-</td>
-</tr>
-</table>
-
-4. Add the setup line to your config
-```lua
-require('xkbswitch').setup()
-```
-
-## With Tmux
-If you use Neovim inside of Tmux add this line to your `.tmux.conf`
-```tmux
-set -g focus-events on
 ```
 
 ## About

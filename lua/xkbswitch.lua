@@ -1,132 +1,138 @@
 local M = {}
 
--- Default parameters
-M.events_get_focus = {'FocusGained', 'CmdlineLeave'}
-
--- nvim_create_autocmd shortcut
-local autocmd = vim.api.nvim_create_autocmd
-
-local xkb_switch_lib = nil
-local user_os_name = vim.loop.os_uname().sysname
-
--- Find the path to the xkbswitch shared object (macOS)
-if user_os_name == 'Darwin' then
-    if vim.fn.filereadable('/usr/local/lib/libInputSourceSwitcher.dylib') == 1 then
-        xkb_switch_lib = '/usr/local/lib/libInputSourceSwitcher.dylib'
-    elseif vim.fn.filereadable('/usr/lib/libInputSourceSwitcher.dylib') == 1 then
-        xkb_switch_lib = '/usr/lib/libInputSourceSwitcher.dylib'
-    end
-    -- Find the path to the xkbswitch shared object (Linux)
-else
-    -- g3kb-switch
-    if vim.fn.filereadable('/usr/lib/libg3kbswitch.so') == 1 then
-        xkb_switch_lib = '/usr/lib/libg3kbswitch.so'
-    elseif vim.fn.filereadable('/usr/local/lib64/libg3kbswitch.so') == 1 then
-        xkb_switch_lib = '/usr/local/lib64/libg3kbswitch.so'
-    elseif vim.fn.filereadable('/usr/local/lib/libg3kbswitch.so') == 1 then
-        xkb_switch_lib = '/usr/local/lib/libg3kbswitch.so'
-    else
-        -- xkb-switch
-        local all_libs_locations = vim.fn.systemlist('ldd $(which xkb-switch)')
-        for _, value in ipairs(all_libs_locations) do
-            if string.find(value, 'libxkbswitch.so.1') or string.find(value, 'libxkbswitch.so.2') then
-                if string.find(value, 'not found') then
-                    xkb_switch_lib = nil
-                else
-                    xkb_switch_lib = string.sub(
-                        value, string.find(value, "/"), string.find(value, "%(") - 2
-                    )
-                end
-            end
-        end
-    end
+local function exec(command)
+    local cmd = command
+    local handle = io.popen(cmd)
+    local result = handle:read("*a")
+    handle:close()
+    return result:gsub("%s+$", "")  -- Trim trailing whitespace
 end
-
-if xkb_switch_lib == nil then
-    error("(xkbswitch.lua) Error occured: layout switcher file was not found.")
-end
-
 
 local function get_current_layout()
-    return vim.fn.libcall(xkb_switch_lib, 'Xkb_Switch_getXkbLayout', '')
+    local cmd = string.format(
+        "hyprctl devices -j | jq -r '.keyboards[] | select(.name == \"%s\") .active_keymap'",
+        M.hyprctl_active_keyboard_name
+    )
+    local result = exec(cmd)
+    return result:lower():sub(1, 2)
 end
 
-local saved_layout = get_current_layout()
-local user_us_layout_variation = nil
+M.events_get_focus = {'FocusGained', 'CmdlineLeave'}
+M.hyprctl_active_keyboard_name = nil
+M.en_layout_name = nil
+M.available_layouts = {}
 
-local user_layouts = vim.fn.systemlist(string.find(xkb_switch_lib, 'dylib') and 'issw -l' or
-    string.find(xkb_switch_lib, 'xkb') and 'xkb-switch -l' or string.find(xkb_switch_lib, 'g3kb') and 'g3kb-switch -l')
--- Find the used US layout (us/us(qwerty)/us(dvorak)/...)
-for _, value in ipairs(user_layouts) do
-    if string.find(value, user_os_name == 'Darwin' and 'ABC' or '^us') then
-        user_us_layout_variation = value
-    elseif string.find(value, '.US$') then
-        user_us_layout_variation = value
+local autocmd = vim.api.nvim_create_autocmd
+
+local function set_layout(layout_code)
+    -- Find the index of the layout in available_layouts
+    local layout_index = nil
+    for i, available_layout in ipairs(M.available_layouts) do
+        if available_layout == layout_code then
+            layout_index = i - 1  -- hyprctl uses 0-based index
+            break
+        end
     end
-end
 
-if user_us_layout_variation == nil then
-    error(
-        "(xkbswitch.lua) Error occured: could not find the English layout. Check your layout list. (xkb-switch -l / issw -l / g3kb-switch -l)")
+    if not layout_index then
+        error(string.format("Layout '%s' not found in available layouts", layout_code))
+    end
+
+    -- Execute the layout switch command
+    local cmd = string.format(
+        'hyprctl switchxkblayout %s %d',
+        M.hyprctl_active_keyboard_name,
+        layout_index
+    )
+    exec(cmd)
 end
 
 function M.setup(opts)
 
-    -- Parse provided options
-    opts = opts or {}
-    if opts.events_get_focus then
-        M.events_get_focus = opts.events_get_focus
+  if not opts or not opts.hyprctl_active_keyboard_name then
+    error("opts.hyprctl_active_keyboard_name must be set")
+  end
+
+  if opts.events_get_focus then
+      M.events_get_focus = opts.events_get_focus
+  end
+
+  M.hyprctl_active_keyboard_name = opts.hyprctl_active_keyboard_name
+  M.saved_layout = get_current_layout()
+
+  local cmd = string.format(
+    "hyprctl devices -j | jq -r '.keyboards[] | select(.name == \"%s\") .layout'",
+    M.hyprctl_active_keyboard_name
+  )
+  local result = exec(cmd)
+  
+  for layout in string.gmatch(result, "([^,]+)") do
+    local trimmed_layout = layout:match("^%s*(.-)%s*$")  -- Trim whitespace
+    -- Check for English layout
+    if not M.en_layout_name and (trimmed_layout:lower():match("^us") or trimmed_layout:lower():match("^en")) then
+      M.en_layout_name = 'en'
+      trimmed_layout = 'en'
     end
 
-    -- When leaving Insert Mode:
-    -- 1. Save the current layout
-    -- 2. Switch to the US layout
-    autocmd(
-        'InsertLeave',
-        {
-            pattern = "*",
-            callback = function()
-                vim.schedule(function()
-                    saved_layout = get_current_layout()
-                    vim.fn.libcall(xkb_switch_lib, 'Xkb_Switch_setXkbLayout', user_us_layout_variation)
-                end)
-            end
-        }
-    )
+    table.insert(M.available_layouts, trimmed_layout)
+  end
+  
+  if not M.en_layout_name then
+    error(string.format(
+      "Error occurred: could not find the English layout. Check your layout list executing: hyprctl devices -j | jq -r '.keyboards[] | select(.name == \"%s\") .layout'",
+      opts.hyprctl_active_keyboard_name
+    ))
+  end
 
-    -- When Neovim gets focus:
-    -- 1. Save the current layout
-    -- 2. Switch to the US layout if Normal Mode or Visual Mode is the current mode
-    autocmd(
-        M.events_get_focus,
-        {
-            pattern = "*",
-            callback = function()
-                vim.schedule(function()
-                    saved_layout = get_current_layout()
-                    local current_mode = vim.api.nvim_get_mode().mode
-                    if current_mode == "n" or current_mode == "no" or current_mode == "v" or current_mode == "V" or current_mode == "^V" then
-                        vim.fn.libcall(xkb_switch_lib, 'Xkb_Switch_setXkbLayout', user_us_layout_variation)
-                    end
-                end)
-            end
-        }
-    )
+  -- When leaving Insert Mode:
+  -- 1. Save the current layout
+  -- 2. Switch to the US layout
+  autocmd(
+      'InsertLeave',
+      {
+          pattern = "*",
+          callback = function()
+              vim.schedule(function()
+                  M.saved_layout = get_current_layout()
+                  set_layout(M.en_layout_name)
+              end)
+          end
+      }
+  )
 
-    -- When Neovim loses focus
-    -- When entering Insert Mode:
-    -- 1. Switch to the previously saved layout
-    autocmd(
-        {'FocusLost', 'InsertEnter'},
-        {
-            pattern = "*",
-            callback = function()
-                vim.schedule(function()
-                    vim.fn.libcall(xkb_switch_lib, 'Xkb_Switch_setXkbLayout', saved_layout)
-                end)
-            end
-        }
-    )
+  -- When Neovim gets focus:
+  -- 1. Save the current layout
+  -- 2. Switch to the US layout if Normal Mode or Visual Mode is the current mode
+  autocmd(
+      M.events_get_focus,
+      {
+          pattern = "*",
+          callback = function()
+              vim.schedule(function()
+                  M.saved_layout = get_current_layout()
+                  local current_mode = vim.api.nvim_get_mode().mode
+                  if current_mode == "n" or current_mode == "no" or current_mode == "v" or current_mode == "V" or current_mode == "^V" then
+                      set_layout(M.en_layout_name)
+                  end
+              end)
+          end
+      }
+  )
+  
+  -- When Neovim loses focus
+  -- When entering Insert Mode:
+  -- 1. Switch to the previously saved layout
+  autocmd(
+      {'FocusLost', 'InsertEnter'},
+      {
+          pattern = "*",
+          callback = function()
+              vim.schedule(function()
+                  set_layout(M.saved_layout)
+              end)
+          end
+      }
+)
 end
 
 return M

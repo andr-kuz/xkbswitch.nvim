@@ -6,15 +6,15 @@ M.events_get_focus = {'FocusGained', 'CmdlineLeave'}
 -- nvim_create_autocmd shortcut
 local autocmd = vim.api.nvim_create_autocmd
 
-local hyprland_main_keyboard = nil
+local hyprland_main_keyboard_name = nil
 local user_us_layout_variation = nil
 
-if vim.fn.executable('hyprland') == 1 then
+if vim.env.HYPRLAND_INSTANCE_SIGNATURE then
     local hyprland_devices_json = vim.fn.system('hyprctl devices -j')
     local hyprland_devices = vim.json.decode(hyprland_devices_json)
     for _, keyboard in pairs(hyprland_devices.keyboards) do
         if keyboard.main == true then
-            hyprland_main_keyboard = keyboard
+            hyprland_main_keyboard_name = keyboard.name
             local index = 0
             for word in string.gmatch(keyboard.layout, '([^,]+)') do
                 if word:match('^us') then
@@ -27,22 +27,22 @@ if vim.fn.executable('hyprland') == 1 then
     end
 end
 
-if hyprland_main_keyboard == nil then
+if hyprland_main_keyboard_name == nil then
     error("Could not detect `hyprland` or its main keyboard with `hyprctl devices -j`")
 end
 
 if user_us_layout_variation == nil then
-    error("Could not detect `us` layout of `" .. hyprland_main_keyboard.name .. "` in `hyprctl devices -j`")
+    error("Could not detect `us` layout of `" .. hyprland_main_keyboard_name .. "` in `hyprctl devices -j`")
 end
 
 local function get_current_layout()
-    return tonumber(vim.fn.system("hyprctl devices | sed -n '/^[[:space:]]*" .. hyprland_main_keyboard.name .. "$/,/active layout index:/ { /active layout index:/ s/.*:[[:space:]]*//p }'"))
+    return vim.fn.system("hyprctl devices | sed -n '/^[[:space:]]*" .. hyprland_main_keyboard_name .. "$/,/active layout index:/ { /active layout index:/ s/.*:[[:space:]]*//p }'")
 end
 
 local saved_layout = get_current_layout()
 
 local function set_layout(layout_index)
-    vim.fn.system('hyprctl switchxkblayout '.. hyprland_main_keyboard.name ..' ' .. layout_index)
+    vim.fn.system('hyprctl switchxkblayout '.. hyprland_main_keyboard_name ..' ' .. layout_index)
 end
 
 function M.setup(opts)

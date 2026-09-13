@@ -6,44 +6,20 @@ M.events_get_focus = {'FocusGained', 'CmdlineLeave'}
 -- nvim_create_autocmd shortcut
 local autocmd = vim.api.nvim_create_autocmd
 
-local hyprland_main_keyboard_name = nil
-local user_us_layout_variation = nil
+local manager = nil
+local managers = require('tiling_managers')
 
 if vim.env.HYPRLAND_INSTANCE_SIGNATURE then
-    local hyprland_devices_json = vim.fn.system('hyprctl devices -j')
-    local hyprland_devices = vim.json.decode(hyprland_devices_json)
-    for _, keyboard in pairs(hyprland_devices.keyboards) do
-        if keyboard.main == true then
-            hyprland_main_keyboard_name = keyboard.name
-            local index = 0
-            for word in string.gmatch(keyboard.layout, '([^,]+)') do
-                if word:match('^us') then
-                    user_us_layout_variation = index
-                end
-                index = index + 1
-            end
-            break
-        end
-    end
+    manager = managers.hyprland:new()
+elseif vim.env.NIRI_SOCKET then
+    manager = managers.niri:new()
 end
 
-if hyprland_main_keyboard_name == nil then
-    error("Could not detect `hyprland` or its main keyboard with `hyprctl devices -j`")
+if manager == nil then
+    error("Could not detect your tiling manager")
 end
 
-if user_us_layout_variation == nil then
-    error("Could not detect `us` layout of `" .. hyprland_main_keyboard_name .. "` in `hyprctl devices -j`")
-end
-
-local function get_current_layout()
-    return vim.fn.system("hyprctl devices | sed -n '/^[[:space:]]*" .. hyprland_main_keyboard_name .. "$/,/active layout index:/ { /active layout index:/ s/.*:[[:space:]]*//p }'")
-end
-
-local saved_layout = get_current_layout()
-
-local function set_layout(layout_index)
-    vim.fn.system('hyprctl switchxkblayout '.. hyprland_main_keyboard_name ..' ' .. layout_index)
-end
+local saved_layout = manager:get_current_layout_index()
 
 function M.setup(opts)
 
@@ -62,8 +38,8 @@ function M.setup(opts)
             pattern = "*",
             callback = function()
                 vim.schedule(function()
-                    saved_layout = get_current_layout()
-                    set_layout(user_us_layout_variation)
+                    saved_layout = manager:get_current_layout_index()
+                    manager:set_layout(manager.us_layout_index)
                 end)
             end
         }
@@ -78,10 +54,10 @@ function M.setup(opts)
             pattern = "*",
             callback = function()
                 vim.schedule(function()
-                    saved_layout = get_current_layout()
+                    saved_layout = manager:get_current_layout_index()
                     local current_mode = vim.api.nvim_get_mode().mode
                     if current_mode == "n" or current_mode == "no" or current_mode == "v" or current_mode == "V" or current_mode == "^V" then
-                        set_layout(user_us_layout_variation)
+                        manager:set_layout(manager.us_layout_index)
                     end
                 end)
             end
@@ -97,7 +73,7 @@ function M.setup(opts)
             pattern = "*",
             callback = function()
                 vim.schedule(function()
-                    set_layout(saved_layout)
+                    manager:set_layout(saved_layout)
                 end)
             end
         }
